@@ -15,6 +15,9 @@ public class Capture
   int sampleFramesPerVideoFrame;
   MediaEncoder encoder;
   float[] songSamples;
+  RenderTexture cubemapLeftEye;
+  RenderTexture cubemapRightEye;
+  RenderTexture equirect;
 
   // Start is called before the first frame update
   public Capture(string outputPath, string audioResourcePath)
@@ -39,33 +42,35 @@ public class Capture
     var audioAttr = new AudioTrackAttributes
     {
       sampleRate = new MediaRational(song.frequency),
-      channelCount = 2,
+      channelCount = (ushort)song.channels,
       language = "fr"
     };
 
-    sampleFramesPerVideoFrame = audioAttr.channelCount *
-        audioAttr.sampleRate.numerator / videoAttr.frameRate.numerator;
+    sampleFramesPerVideoFrame = (audioAttr.channelCount *
+        audioAttr.sampleRate.numerator) / videoAttr.frameRate.numerator;
 
     File.Delete(outputPath);
 
     encoder = new MediaEncoder(outputPath, videoAttr, audioAttr);
+
+    cubemapLeftEye = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+    cubemapLeftEye.dimension = TextureDimension.Cube;
+    cubemapRightEye = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+    cubemapRightEye.dimension = TextureDimension.Cube;
+    equirect = new RenderTexture(width, height * 2, 24, RenderTextureFormat.ARGB32);
   }
 
   public void update(Camera camera)
   {
-    var cubemapLeftEye = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
-    cubemapLeftEye.dimension = TextureDimension.Cube;
-    var cubemapRightEye = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
-    cubemapRightEye.dimension = TextureDimension.Cube;
-    var equirect = new RenderTexture(width, height * 2, 24, RenderTextureFormat.ARGB32);
-
     camera.stereoSeparation = 0.064f; // Eye separation (IPD) of 64mm.
     camera.RenderToCubemap(cubemapLeftEye, 63, Camera.MonoOrStereoscopicEye.Left);
     camera.RenderToCubemap(cubemapRightEye, 63, Camera.MonoOrStereoscopicEye.Right);
     cubemapLeftEye.ConvertToEquirect(equirect, Camera.MonoOrStereoscopicEye.Left);
     cubemapRightEye.ConvertToEquirect(equirect, Camera.MonoOrStereoscopicEye.Right);
 
-    encoder.AddFrame(toTexture2D(equirect));
+    Texture2D texture = toTexture2D(equirect);
+    encoder.AddFrame(texture);
+    Object.Destroy(texture);
     var audioBuffer = new NativeArray<float>(sampleFramesPerVideoFrame, Allocator.Temp);
     for (int i = 0; i < sampleFramesPerVideoFrame; i++)
     {
@@ -76,7 +81,7 @@ public class Capture
       }
     }
     encoder.AddSamples(audioBuffer);
-
+    audioBuffer.Dispose();
     frameNum += 1;
   }
 
